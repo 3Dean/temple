@@ -2,7 +2,23 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js';
 import { ColorManagement, SRGBColorSpace, ACESFilmicToneMapping } from 'three';
+import {
+  loadVrmAvatar,
+  updateVrm,
+  setSpeaking,
+  setMouthOpen,
+} from './avatar/vrmAvatar.js';
+import {
+  initAudio as initSpeechAudio,
+  playFromUrl,
+  playTtsText,
+  getMouthAmount,
+  isPlaying as isSpeechPlaying,
+} from './audio/speechPlayer.js';
 import './style.css';
+
+// Audio files expected in /public/audio:
+// /audio/meditation_intro.mp3, /audio/q_mind_wandering.mp3, /audio/q_anxious.mp3, /audio/q_cant_focus.mp3
 
  // Wait for everything to load
  window.addEventListener("load", init);
@@ -24,6 +40,8 @@ import './style.css';
    const gravity = 0.01;
    let isOnGround = false;
    const jumpForce = 0.25;
+   const clock = new THREE.Clock();
+   let speechAudioInitialized = false;
 
    // Object to store loaded models
    let models = {};
@@ -48,6 +66,80 @@ import './style.css';
    // Add event listeners for audio controls
    playPauseButton.addEventListener("click", toggleAudio);
    volumeSlider.addEventListener("input", updateVolume);
+
+   const meditationUi = createMeditationUi();
+
+   async function ensureSpeechAudioInitialized() {
+     if (!speechAudioInitialized) {
+       await initSpeechAudio();
+       speechAudioInitialized = true;
+     }
+   }
+
+   async function playSpeech(text, fallbackUrl) {
+    meditationUi.caption.textContent = text;
+    await ensureSpeechAudioInitialized();
+    const ttsStarted = await playTtsText(text);
+    if (ttsStarted) {
+      return;
+    }
+
+    const fallbackStarted = await playFromUrl(fallbackUrl);
+    if (!fallbackStarted) {
+      console.warn(`Speech audio unavailable from API and fallback file: ${fallbackUrl}`);
+    }
+   }
+
+   function createMeditationUi() {
+     const root = document.createElement("div");
+     root.id = "meditation-ui";
+
+     const caption = document.createElement("div");
+     caption.id = "meditation-caption";
+     caption.textContent =
+       "Press Start Meditation to begin a guided reflection.";
+
+     const controls = document.createElement("div");
+     controls.className = "meditation-buttons";
+
+     const startButton = document.createElement("button");
+     startButton.textContent = "Start Meditation";
+     startButton.addEventListener("click", async () => {
+       const text =
+         "Take a slow breath in, hold for a moment, and release. Let your shoulders soften and rest your attention gently on the present moment.";
+       await playSpeech(text, "/audio/meditation_intro.mp3");
+     });
+
+     const q1 = document.createElement("button");
+     q1.textContent = "My mind is wandering";
+     q1.addEventListener("click", async () => {
+       const text =
+         "Noticing wandering is already awareness. Label the thought softly and return to your breath.";
+       await playSpeech(text, "/audio/q_mind_wandering.mp3");
+     });
+
+     const q2 = document.createElement("button");
+     q2.textContent = "I feel anxious";
+     q2.addEventListener("click", async () => {
+       const text =
+         "Place one hand on your chest and lengthen your exhale. You are safe in this moment.";
+       await playSpeech(text, "/audio/q_anxious.mp3");
+     });
+
+     const q3 = document.createElement("button");
+     q3.textContent = "I cant focus";
+     q3.addEventListener("click", async () => {
+       const text =
+         "Shrink your focus to one anchor: just the sensation of breathing at your nose for the next three breaths.";
+       await playSpeech(text, "/audio/q_cant_focus.mp3");
+     });
+
+     controls.append(startButton, q1, q2, q3);
+     root.append(caption, controls);
+     document.body.appendChild(root);
+
+     return { root, caption };
+   }
 
    // Setup audio system
    function setupAudio() {
@@ -1014,12 +1106,23 @@ import './style.css';
    // Animation loop
    function animate(time) {
      requestAnimationFrame(animate);
+     const delta = clock.getDelta();
 
      // Update player movement
      updatePlayerMovement();
 
      // Animate flowers if we have any
      animateFlowers(time);
+
+     updateVrm(delta);
+
+     const speaking = isSpeechPlaying();
+     setSpeaking(speaking);
+     if (speaking) {
+       setMouthOpen(getMouthAmount());
+     } else {
+       setMouthOpen(0);
+     }
 
      // Render
      renderer.render(scene, camera);
@@ -1031,6 +1134,13 @@ import './style.css';
      setupPlayer();
      loadEnvironmentMap();
      loadModels(); // Load all models at once
+     loadVrmAvatar({
+       scene,
+       url: "/models/yogawoman.vrm",
+       position: new THREE.Vector3(0, 0, 6.342),
+     }).catch((error) => {
+       console.warn("Failed to load VRM avatar /models/yogawoman.vrm", error);
+     });
 
      // Fix any shadow issues after a short delay to ensure all models are loaded
      setTimeout(fixShadowArtifacts, 2000);

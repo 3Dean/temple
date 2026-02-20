@@ -84,3 +84,50 @@ canvas {
   width: 100px;
   margin: 5px 0;
 }
+
+#meditation-ui {
+  position: fixed;
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%);
+  width: min(92vw, 760px);
+  background: rgba(0, 0, 0, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  color: #fff;
+  padding: 12px;
+  z-index: 20;
+  backdrop-filter: blur(2px);
+}
+
+#meditation-caption {
+  font-size: 14px;
+  line-height: 1.4;
+  margin-bottom: 10px;
+  min-height: 2.8em;
+}
+
+.meditation-buttons {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.meditation-buttons button {
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.meditation-buttons button:hover {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+@media (max-width: 700px) {
+  .meditation-buttons {
+    grid-template-columns: 1fr;
+  }
+}
