@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js';
+import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
 import { ColorManagement, SRGBColorSpace, ACESFilmicToneMapping } from 'three';
 import {
   loadVrmAvatar,
@@ -32,14 +32,14 @@ import './style.css';
      audioIsPlaying = false;
    let audioInitialized = false;
 
-   const playerHeight = 3.1; // Height of player camera (eye level) - INCREASED FROM 1.7
+   const playerHeight = 1.7; // Height of player camera (eye level) - INCREASED FROM 1.7
    const playerRadius = 0.5;
    const moveSpeed = 0.1;
    let velocity = new THREE.Vector3();
    let verticalVelocity = 0;
    const gravity = 0.01;
    let isOnGround = false;
-   const jumpForce = 0.25;
+   const jumpForce = 0.15;
    const clock = new THREE.Clock();
    let speechAudioInitialized = false;
 
@@ -292,7 +292,7 @@ import './style.css';
      renderer.setSize(window.innerWidth, window.innerHeight);
      renderer.shadowMap.enabled = true;
      renderer.toneMapping = ACESFilmicToneMapping;
-     renderer.toneMappingExposure = 0.5; // Increased exposure for better brightness
+     renderer.toneMappingExposure = 0.4; // Increased exposure for better brightness
      renderer.outputColorSpace = SRGBColorSpace;
      ColorManagement.enabled = true;
      document.body.appendChild(renderer.domElement);
@@ -301,7 +301,7 @@ import './style.css';
      loadEnvironmentMap();
 
      // Add lights - adjusted for better balance with environment lighting
-     const ambientLight = new THREE.AmbientLight(0xe4e8ff, 0.4); // Increased ambient intensity
+     const ambientLight = new THREE.AmbientLight(0x92A0B5, 0.4); // Increased ambient intensity
      scene.add(ambientLight);
 
      // Directional light with improved shadow settings
@@ -343,20 +343,20 @@ import './style.css';
      window.addEventListener("resize", onWindowResize);
    }
 
-   // Load environment map from EXR file
+   // Load environment map from HDR file
    function loadEnvironmentMap() {
      // Create a basic sky color as a fallback
      scene.background = new THREE.Color(0x87ceeb);
 
-     // Load the EXR file
-     const exrLoader = new EXRLoader();
-     const exrUrl = "/images/drackenstein_quarry_puresky_1k.exr";
-     console.log("Loading EXR from:", exrUrl);
+     // Load the HDR file
+     const rgbeLoader = new RGBELoader();
+     const hdrUrl = "/images/kloppenheim_06_puresky_2k.hdr";
+     console.log("Loading HDR from:", hdrUrl);
 
-     exrLoader.load(
-       exrUrl,
+     rgbeLoader.load(
+       hdrUrl,
        function (texture) {
-         console.log("EXR loaded successfully");
+         console.log("HDR loaded successfully");
 
          // Setup proper texture mapping
          texture.mapping = THREE.EquirectangularReflectionMapping;
@@ -379,11 +379,11 @@ import './style.css';
 
          console.log("Environment map processed and applied");
        },
-       function (xhr) {
-         console.log(
-           "EXR loading: " + (xhr.loaded / xhr.total) * 100 + "%"
-         );
-       },
+        function (xhr) {
+          console.log(
+            "HDR loading: " + (xhr.loaded / xhr.total) * 100 + "%"
+          );
+        },
        function (error) {
          console.error("Error loading environment map:", error);
        }
@@ -583,9 +583,9 @@ import './style.css';
            console.log(`Model "${modelInfo.name}" loaded`);
 
            // Special case for navmesh: place player on it
-           if (modelInfo.name === "navmesh" && player) {
-             placePlayerOnNavmesh(new THREE.Vector3(0, 10, 18));
-           }
+            if (modelInfo.name === "navmesh" && player) {
+              placePlayerOnNavmesh(new THREE.Vector3(0, 0, 7.5));
+            }
          },
          function (xhr) {
            // Individual model loading progress
@@ -694,7 +694,7 @@ import './style.css';
      scene.add(navmesh);
 
      // Place player on the backup navmesh
-     placePlayerOnNavmesh(new THREE.Vector3(0, 2, 0));
+      placePlayerOnNavmesh(new THREE.Vector3(0, 0, 7.5));
    }
 
    // Initialize player
@@ -722,6 +722,9 @@ import './style.css';
 
      // Add camera to player (at eye level)
      camera.position.set(0, playerHeight, 0);
+     euler.y = 0; // Start facing 180 degrees from default forward
+     camera.rotation.copy(euler);
+     playerDirection.set(0, 0, -1).applyQuaternion(camera.quaternion);
      player.add(camera);
 
      // Setup listener for keyboard controls
@@ -1041,7 +1044,7 @@ import './style.css';
 
        // If we fall too far, reset position
        if (player.position.y < -50) {
-         placePlayerOnNavmesh(new THREE.Vector3(0, 10, 0));
+         placePlayerOnNavmesh(new THREE.Vector3(0, 0, 8));
        }
      }
    }
@@ -1134,13 +1137,14 @@ import './style.css';
      setupPlayer();
      loadEnvironmentMap();
      loadModels(); // Load all models at once
-     loadVrmAvatar({
-       scene,
-       url: "/models/yogawoman.vrm",
-       position: new THREE.Vector3(0, 0, 6.342),
-     }).catch((error) => {
-       console.warn("Failed to load VRM avatar /models/yogawoman.vrm", error);
-     });
+      loadVrmAvatar({
+        scene,
+        url: "/models/yogawoman_idle.glb",
+        position: new THREE.Vector3(0, 0, 6.342),
+        animationClipName: "clip_idle",
+      }).catch((error) => {
+        console.warn("Failed to load avatar /models/yogawoman_idle.glb", error);
+      });
 
      // Fix any shadow issues after a short delay to ensure all models are loaded
      setTimeout(fixShadowArtifacts, 2000);

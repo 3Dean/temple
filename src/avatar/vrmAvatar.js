@@ -3,10 +3,22 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { VRMLoaderPlugin } from '@pixiv/three-vrm';
 
 let currentVrm = null;
+let currentAvatarRoot = null;
+let currentMixer = null;
 let isSpeaking = false;
 let speechTime = 0;
 let mouthFallbackTargets = [];
+let blinkFallbackTargets = [];
 let hasEmbeddedAnimationClips = false;
+const SPEECH_MORPH_STRENGTH = 0.35;
+const SPEECH_MORPH_MAX = 0.45;
+const BLINK_CLOSED_DURATION = 0.09;
+const BLINK_OPEN_DURATION = 0.12;
+
+let blinkTimer = 0;
+let nextBlinkDelay = 0;
+let blinkState = 'idle';
+let blinkAmount = 0;
 
 const rightArm = {
   upper: null,
@@ -40,6 +52,12 @@ function _captureRightArmBones() {
   if (rightArm.hand) rightArm.restHand.copy(rightArm.hand.quaternion);
 }
 
+function _clearRightArmBones() {
+  rightArm.upper = null;
+  rightArm.lower = null;
+  rightArm.hand = null;
+}
+
 function _cacheFallbackMouthMorphTargets(root) {
   mouthFallbackTargets = [];
   const mouthNames = ['a', 'aa', 'mouthopen', 'mouth_open', 'vrc.v_aa'];
@@ -60,6 +78,94 @@ function _cacheFallbackMouthMorphTargets(root) {
       }
     }
   });
+}
+
+function _cacheFallbackBlinkMorphTargets(root) {
+  blinkFallbackTargets = [];
+  const blinkNames = ['blink', 'eyeclose', 'eye_close', 'eyesclosed', 'closeeye'];
+
+  root.traverse((obj) => {
+    if (!obj.isMesh || !obj.morphTargetDictionary || !obj.morphTargetInfluences) {
+      return;
+    }
+
+    const dict = obj.morphTargetDictionary;
+    const keys = Object.keys(dict);
+
+    for (const key of keys) {
+      const normalized = key.toLowerCase();
+      if (blinkNames.some((name) => normalized.includes(name))) {
+        const index = dict[key];
+        blinkFallbackTargets.push({ mesh: obj, index });
+      }
+    }
+  });
+}
+
+function _nextBlinkDelay() {
+  return 2.2 + Math.random() * 3.0;
+}
+
+function _resetBlinkState() {
+  blinkTimer = 0;
+  blinkAmount = 0;
+  blinkState = 'idle';
+  nextBlinkDelay = _nextBlinkDelay();
+}
+
+function _setBlinkAmount(amount0to1) {
+  const amount = THREE.MathUtils.clamp(amount0to1 || 0, 0, 1);
+  const expressionManager = currentVrm?.expressionManager;
+
+  if (expressionManager?.setValue) {
+    expressionManager.setValue('blink', amount);
+    expressionManager.setValue('blinkLeft', amount);
+    expressionManager.setValue('blinkRight', amount);
+    return;
+  }
+
+  const blendShapeProxy = currentVrm?.blendShapeProxy;
+  if (blendShapeProxy?.setValue) {
+    blendShapeProxy.setValue('Blink', amount);
+    if (blendShapeProxy.update) blendShapeProxy.update();
+    return;
+  }
+
+  blinkFallbackTargets.forEach(({ mesh, index }) => {
+    if (mesh.morphTargetInfluences && mesh.morphTargetInfluences[index] !== undefined) {
+      mesh.morphTargetInfluences[index] = amount;
+    }
+  });
+}
+
+function _updateBlink(delta) {
+  if (!currentAvatarRoot) return;
+
+  blinkTimer += delta;
+
+  if (blinkState === 'idle') {
+    if (blinkTimer >= nextBlinkDelay) {
+      blinkState = 'closing';
+      blinkTimer = 0;
+    }
+  } else if (blinkState === 'closing') {
+    blinkAmount = Math.min(1, blinkTimer / BLINK_CLOSED_DURATION);
+    if (blinkTimer >= BLINK_CLOSED_DURATION) {
+      blinkState = 'opening';
+      blinkTimer = 0;
+      blinkAmount = 1;
+    }
+  } else if (blinkState === 'opening') {
+    blinkAmount = Math.max(0, 1 - blinkTimer / BLINK_OPEN_DURATION);
+    if (blinkTimer >= BLINK_OPEN_DURATION) {
+      blinkState = 'idle';
+      blinkTimer = 0;
+      blinkAmount = 0;
+      nextBlinkDelay = _nextBlinkDelay();
+    }
+  }
+
+  _setBlinkAmount(blinkAmount);
 }
 
 function _applyProceduralRightArmGesture(delta) {
@@ -96,7 +202,7 @@ function _applyProceduralRightArmGesture(delta) {
   }
 }
 
-export async function loadVrmAvatar({ scene, url, position }) {
+export async function loadVrmAvatar({ scene, url, position, animationClipName }) {
   const loader = new GLTFLoader();
   loader.register((parser) => new VRMLoaderPlugin(parser));
   const originalWarn = console.warn;
@@ -119,34 +225,60 @@ export async function loadVrmAvatar({ scene, url, position }) {
     console.warn = originalWarn;
   }
   const vrm = gltf.userData?.vrm;
+  const avatarRoot = vrm?.scene || gltf.scene;
   hasEmbeddedAnimationClips = Array.isArray(gltf.animations) && gltf.animations.length > 0;
-
-  if (!vrm) {
-    throw new Error(`VRM data was not found in ${url}`);
-  }
-
-  currentVrm = vrm;
-  vrm.scene.position.copy(position || new THREE.Vector3());
+  currentVrm = vrm || null;
+  currentAvatarRoot = avatarRoot;
+  currentMixer = null;
+  avatarRoot.position.copy(position || new THREE.Vector3());
 
   // Conservative defaults. Adjust here if your specific avatar imports with different orientation.
-  vrm.scene.rotation.set(0, 0, 0);
-  vrm.scene.scale.setScalar(1);
+  avatarRoot.rotation.set(0, 0, 0);
+  avatarRoot.scale.setScalar(1.1);
 
-  scene.add(vrm.scene);
+  scene.add(avatarRoot);
 
-  _captureRightArmBones();
-  _cacheFallbackMouthMorphTargets(vrm.scene);
+  if (vrm) {
+    _captureRightArmBones();
+  } else {
+    _clearRightArmBones();
+  }
+  _cacheFallbackMouthMorphTargets(avatarRoot);
+  _cacheFallbackBlinkMorphTargets(avatarRoot);
+  _resetBlinkState();
 
-  return vrm;
+  if (Array.isArray(gltf.animations) && gltf.animations.length > 0) {
+    currentMixer = new THREE.AnimationMixer(avatarRoot);
+    const chosenClip =
+      (animationClipName &&
+        THREE.AnimationClip.findByName(gltf.animations, animationClipName)) ||
+      gltf.animations[0];
+    const action = currentMixer.clipAction(chosenClip);
+    action.reset();
+    action.play();
+    if (animationClipName && chosenClip.name !== animationClipName) {
+      console.warn(
+        `Requested animation clip "${animationClipName}" not found in ${url}. Using "${chosenClip.name}" instead.`
+      );
+    }
+  }
+
+  return vrm || gltf;
 }
 
 export function updateVrm(delta) {
-  if (!currentVrm) return;
+  if (!currentAvatarRoot) return;
 
   if (!hasEmbeddedAnimationClips) {
     _applyProceduralRightArmGesture(delta);
   }
-  currentVrm.update(delta);
+  if (currentVrm?.update) {
+    currentVrm.update(delta);
+  }
+  if (currentMixer) {
+    currentMixer.update(delta);
+  }
+  _updateBlink(delta);
 }
 
 export function setSpeaking(nextSpeaking) {
@@ -154,10 +286,9 @@ export function setSpeaking(nextSpeaking) {
 }
 
 export function setMouthOpen(amount0to1) {
-  if (!currentVrm) return;
-
-  const amount = THREE.MathUtils.clamp(amount0to1 || 0, 0, 1);
-  const expressionManager = currentVrm.expressionManager;
+  const baseAmount = THREE.MathUtils.clamp(amount0to1 || 0, 0, 1);
+  const amount = Math.min(baseAmount * SPEECH_MORPH_STRENGTH, SPEECH_MORPH_MAX);
+  const expressionManager = currentVrm?.expressionManager;
 
   if (expressionManager?.setValue) {
     expressionManager.setValue('aa', amount);
@@ -166,7 +297,7 @@ export function setMouthOpen(amount0to1) {
     return;
   }
 
-  const blendShapeProxy = currentVrm.blendShapeProxy;
+  const blendShapeProxy = currentVrm?.blendShapeProxy;
   if (blendShapeProxy?.setValue) {
     blendShapeProxy.setValue('A', amount);
     blendShapeProxy.setValue('I', amount * 0.1);
