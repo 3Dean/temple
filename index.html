@@ -6,23 +6,25 @@
     <title>First Person NavMesh Navigation with HDR Environment</title>
   </head>
   <body>
-    <div id="info">First Person Navigation with HDR Environment</div>
-    <div id="controls">
-      WASD - Move<br />
-      Mouse - Look<br />
-      Space - Jump<br />
-      Shift - Run<br />
-      Click - Teleport<br />
-      T - Toggle Navmesh
+    <div id="info">Avatar Demo</div>
+    <div id="loading">
+      <div id="loading-status">Loading...</div>
+      <div id="loading-controls">
+        WASD - Move<br />
+        Mouse - Look<br />
+        Space - Jump<br />
+        Shift - Run<br />
+        Click - Teleport<br />
+        T - Toggle Navmesh
+      </div>
     </div>
-    <div id="loading">Loading...</div>
     <div id="crosshair">+</div>
 
     <!-- Audio Controls UI -->
     <div id="audio-controls">
       <button id="play-pause">Play Music</button>
       <input type="range" id="volume-slider" min="0" max="100" value="70" />
-      <div id="volume-label">Volume: 70%</div>
+      <div id="volume-label">Volume</div>
     </div>
     <!-- Vite handles this now -->
     <script type="module" src="/src/main.js"></script>

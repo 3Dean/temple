@@ -23,14 +23,13 @@ import './style.css';
  // Wait for everything to load
  window.addEventListener("load", init);
 
- function init() {
-   // Global variables
-   let scene, camera, renderer;
-   let player, navmesh;
-   let audioContext, audioSource, gainNode;
-   let audioBuffer,
-     audioIsPlaying = false;
-   let audioInitialized = false;
+  function init() {
+    // Global variables
+    let scene, camera, renderer;
+    let player, navmesh;
+    let musicElement = null;
+    let audioIsPlaying = false;
+    const SOMAFM_DRONEZONE_STREAM_URL = "https://ice5.somafm.com/dronezone-128-mp3";
 
    const playerHeight = 1.7; // Height of player camera (eye level) - INCREASED FROM 1.7
    const playerRadius = 0.5;
@@ -55,17 +54,17 @@ import './style.css';
      maxAngle: 0.15, // Maximum angle in radians
    };
 
-   // Initialize audio system
-   setupAudio();
-
    // Audio control elements
    const playPauseButton = document.getElementById("play-pause");
    const volumeSlider = document.getElementById("volume-slider");
-   const volumeLabel = document.getElementById("volume-label");
+   const loadingElement = document.getElementById("loading");
+   const loadingStatusElement = document.getElementById("loading-status");
 
    // Add event listeners for audio controls
    playPauseButton.addEventListener("click", toggleAudio);
    volumeSlider.addEventListener("input", updateVolume);
+   // Initialize audio system
+   setupAudio();
 
    const meditationUi = createMeditationUi();
 
@@ -143,96 +142,47 @@ import './style.css';
 
    // Setup audio system
    function setupAudio() {
-     // Use click anywhere on the document to initialize audio (browser requirement)
-     document.addEventListener("click", initializeAudioContext, {
-       once: true,
+     musicElement = new Audio(SOMAFM_DRONEZONE_STREAM_URL);
+     musicElement.preload = "none";
+     musicElement.crossOrigin = "anonymous";
+     musicElement.addEventListener("play", () => {
+       audioIsPlaying = true;
+       playPauseButton.textContent = "Pause Music";
      });
-
-     // Pre-load the audio file
-     const audioUrl = "/audio/innerpeace.mp3";
-     console.log("Preloading audio from:", audioUrl);
-     // Fetch the audio file and convert it to an ArrayBuffer
-     // This is to ensure the audio file is loaded before we try to play it
-     fetch(audioUrl)
-       .then((response) => response.arrayBuffer())
-       .then((arrayBuffer) => {
-         // Store the audio buffer for later use when context is created
-         audioBuffer = arrayBuffer;
-         console.log("Audio file preloaded");
-       })
-       .catch((error) => {
-         console.error("Error loading audio file:", error);
-       });
-   }
-
-   // Initialize AudioContext on user interaction (required by browsers)
-   function initializeAudioContext() {
-     if (audioInitialized) return;
-
-     try {
-       // Create audio context
-       audioContext = new (window.AudioContext ||
-         window.webkitAudioContext)();
-
-       // Create gain node for volume control
-       gainNode = audioContext.createGain();
-       gainNode.gain.value = volumeSlider.value / 100;
-       gainNode.connect(audioContext.destination);
-
-       // If we've already loaded the buffer, decode it now
-       if (audioBuffer) {
-         audioContext
-           .decodeAudioData(audioBuffer)
-           .then((decodedData) => {
-             audioBuffer = decodedData;
-             console.log("Audio ready to play");
-           })
-           .catch((err) =>
-             console.error("Error decoding audio data", err)
-           );
-       }
-
-       audioInitialized = true;
-       console.log("Audio context initialized");
-     } catch (e) {
-       console.error("Web Audio API not supported in this browser:", e);
-     }
+     musicElement.addEventListener("pause", () => {
+       audioIsPlaying = false;
+       playPauseButton.textContent = "Play Music";
+     });
+     musicElement.addEventListener("error", (error) => {
+       console.error("Error loading SomaFM Drone Zone stream:", error);
+     });
+     updateVolume();
    }
 
    // Toggle audio playback
-   function toggleAudio() {
-     if (!audioInitialized || !audioBuffer) {
-       console.log("Audio not yet initialized or loaded");
+   async function toggleAudio() {
+     if (!musicElement) {
+       console.log("Audio stream is not initialized");
        return;
      }
 
      if (audioIsPlaying) {
-       // Stop audio
-       if (audioSource) {
-         audioSource.stop();
-         audioSource = null;
-       }
-       audioIsPlaying = false;
-       playPauseButton.textContent = "Play Music";
+       musicElement.pause();
      } else {
-       // Start audio
-       audioSource = audioContext.createBufferSource();
-       audioSource.buffer = audioBuffer;
-       audioSource.loop = true;
-       audioSource.connect(gainNode);
-       audioSource.start(0);
-       audioIsPlaying = true;
-       playPauseButton.textContent = "Pause Music";
+       try {
+         await musicElement.play();
+       } catch (error) {
+         console.error("Could not start SomaFM Drone Zone stream:", error);
+       }
      }
    }
 
    // Update audio volume
    function updateVolume() {
      const volumeValue = volumeSlider.value;
-     volumeLabel.textContent = `Volume: ${volumeValue}%`;
 
-     if (gainNode) {
-       gainNode.gain.value = volumeValue / 100;
+     if (musicElement) {
+       musicElement.volume = volumeValue / 100;
      }
    }
 
@@ -241,15 +191,15 @@ import './style.css';
      // OnLoad - Called when all models are loaded
      function () {
        console.log("All models loaded successfully");
-       document.getElementById("loading").style.display = "none";
+       loadingElement.style.display = "none";
      },
      // OnProgress - Called as loading progresses
      function (url, itemsLoaded, itemsTotal) {
        const progress = Math.round((itemsLoaded / itemsTotal) * 100);
        console.log(`Loading: ${progress}% (${itemsLoaded}/${itemsTotal})`);
-       document.getElementById(
-         "loading"
-       ).textContent = `Loading... ${progress}%`;
+       if (loadingStatusElement) {
+         loadingStatusElement.textContent = `Loading... ${progress}%`;
+       }
      },
      // OnError - Called when loading fails
      function (url) {
@@ -610,10 +560,10 @@ import './style.css';
 
      // Clean up roughness mipmapper after all models are loaded
      loadingManager.onLoad = function () {
-       document.getElementById("loading").style.display = "none";
+       loadingElement.style.display = "none";
 
        // Suggest playing music once everything is loaded
-       if (audioBuffer && !audioIsPlaying) {
+        if (!audioIsPlaying) {
          // Show a hint that music is available
          playPauseButton.style.backgroundColor = "rgba(80, 200, 120, 0.3)";
          setTimeout(() => {
