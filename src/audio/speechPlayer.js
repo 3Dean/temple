@@ -115,12 +115,14 @@ function decodeBase64ToBytes(base64) {
   return bytes;
 }
 
-export async function playTtsText(text) {
+export async function playTtsText(text, options = {}) {
   if (!audioContext) {
     await initAudio();
   }
 
   const payload = typeof text === 'string' ? text.trim() : '';
+  const requestedType = typeof options?.type === 'string' ? options.type.trim().toLowerCase() : 'text';
+  const type = requestedType === 'ssml' ? 'ssml' : 'text';
   if (!payload) {
     console.warn('No text provided for TTS');
     return false;
@@ -132,7 +134,7 @@ export async function playTtsText(text) {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ text: payload }),
+      body: JSON.stringify({ text: payload, type }),
     });
 
     if (!response.ok) {

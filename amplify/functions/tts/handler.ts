@@ -6,6 +6,7 @@ import {
 
 const MAX_TEXT_LENGTH = 1200;
 const DEFAULT_VOICE_ID = 'Joanna';
+const SUPPORTED_TEXT_TYPES = new Set(['text', 'ssml']);
 
 const polly = new PollyClient({});
 
@@ -70,6 +71,9 @@ export const handler = async (
   try {
     const parsedBody = event.body ? JSON.parse(event.body) : {};
     const text = typeof parsedBody?.text === 'string' ? parsedBody.text.trim() : '';
+    const requestedType =
+      typeof parsedBody?.type === 'string' ? parsedBody.type.trim().toLowerCase() : 'text';
+    const textType = SUPPORTED_TEXT_TYPES.has(requestedType) ? requestedType : 'text';
 
     if (!text) {
       return response(400, JSON.stringify({ error: 'text is required' }));
@@ -87,12 +91,14 @@ export const handler = async (
     const voiceId = (process.env.VOICE_ID || DEFAULT_VOICE_ID) as VoiceId;
     console.log('Synthesizing speech', {
       textLength: text.length,
+      textType,
       voiceId,
     });
 
     const synth = await polly.send(
       new SynthesizeSpeechCommand({
         Text: text,
+        TextType: textType,
         OutputFormat: 'mp3',
         VoiceId: voiceId,
         Engine: 'neural',

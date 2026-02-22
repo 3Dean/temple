@@ -67,6 +67,7 @@ import './style.css';
    setupAudio();
 
    const meditationUi = createMeditationUi();
+   let meditationRunId = 0;
 
    async function ensureSpeechAudioInitialized() {
      if (!speechAudioInitialized) {
@@ -75,18 +76,147 @@ import './style.css';
      }
    }
 
-   async function playSpeech(text, fallbackUrl) {
-    meditationUi.caption.textContent = text;
+   function stripSsml(ssml) {
+    return ssml
+      .replace(/<break\b[^>]*\/>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+   }
+
+   async function playSpeech({ text, type = "text", caption, fallbackUrl } = {}) {
+    const captionText =
+      typeof caption === "string" && caption.trim()
+        ? caption.trim()
+        : type === "ssml"
+          ? stripSsml(text || "")
+          : (text || "");
+    meditationUi.caption.textContent = captionText;
     await ensureSpeechAudioInitialized();
-    const ttsStarted = await playTtsText(text);
+    const ttsStarted = await playTtsText(text, { type });
     if (ttsStarted) {
-      return;
+      await waitForSpeechToFinish();
+      return true;
+    }
+
+    if (!fallbackUrl) {
+      return false;
     }
 
     const fallbackStarted = await playFromUrl(fallbackUrl);
     if (!fallbackStarted) {
       console.warn(`Speech audio unavailable from API and fallback file: ${fallbackUrl}`);
+      return false;
     }
+
+    await waitForSpeechToFinish();
+    return true;
+   }
+
+   async function waitForSpeechToFinish(timeoutMs = 240000) {
+     const start = performance.now();
+     let observedPlayback = false;
+
+     while (performance.now() - start < timeoutMs) {
+       const speaking = isSpeechPlaying();
+       if (speaking) {
+         observedPlayback = true;
+       }
+       if (observedPlayback && !speaking) {
+         return;
+       }
+       await new Promise((resolve) => setTimeout(resolve, 80));
+     }
+
+     console.warn("Timed out while waiting for speech playback to finish");
+   }
+
+   async function waitWithRunGuard(ms, runId) {
+     const startedAt = performance.now();
+     while (performance.now() - startedAt < ms) {
+       if (runId !== meditationRunId) {
+         return false;
+       }
+       await new Promise((resolve) => setTimeout(resolve, 200));
+     }
+     return true;
+   }
+
+   async function runGuidedMeditation() {
+     const runId = ++meditationRunId;
+     const segments = [
+       {
+         text:
+           "<speak>Welcome. <break time='400ms'/> Take a moment to settle into your space. <break time='600ms'/> Allow your body to be supported. <break time='500ms'/> Let your shoulders soften. <break time='500ms'/> Gently close your eyes, or lower your gaze. <break time='700ms'/> Begin by noticing your breath exactly as it is. <break time='500ms'/> No need to change it yet. <break time='500ms'/> Simply observe the inhale <break time='500ms'/> and the exhale. <break time='700ms'/> Feel the air entering through your nose <break time='400ms'/> and leaving your body again. <break time='700ms'/> There is nothing you need to do right now. <break time='500ms'/> Just arriving.</speak>",
+         type: "ssml",
+         caption:
+           "Welcome. Take a moment to settle into your space. Allow your body to be supported. Let your shoulders soften. Gently close your eyes, or lower your gaze. Begin by noticing your breath exactly as it is. No need to change it yet. Simply observe the inhale and the exhale. Feel the air entering through your nose and leaving your body again. There is nothing you need to do right now. Just arriving.",
+         pauseSeconds: 7,
+       },
+       {
+         text:
+           "<speak>Now we'll gently shape the breath. <break time='700ms'/> Inhale slowly for a count of four. <break time='300ms'/> One <break time='1000ms'/> two <break time='1000ms'/> three <break time='1000ms'/> four. <break time='1000ms'/> Hold the breath softly for two. <break time='1000ms'/> One <break time='1000ms'/> two. <break time='1000ms'/> Exhale slowly for six. <break time='300ms'/> One <break time='1000ms'/> two <break time='1000ms'/> three <break time='1000ms'/> four <break time='1000ms'/> five <break time='1000ms'/> six. <break time='1200ms'/> Again. <break time='500ms'/> Inhale four. <break time='900ms'/> Hold two. <break time='700ms'/> Exhale six. <break time='1200ms'/> Let the exhale be smooth and unforced. <break time='600ms'/> With each breath, allow tension to drain downward.</speak>",
+         type: "ssml",
+         caption:
+           "Now we'll gently shape the breath. Inhale slowly for a count of four. One two three four. Hold the breath softly for two. One two. Exhale slowly for six. One two three four five six. Again. Inhale four, hold two, exhale six. Let the exhale be smooth and unforced. With each breath, allow tension to drain downward.",
+         pauseSeconds: 12,
+       },
+       {
+         text:
+           "<speak>Now allow your breathing to return to a natural rhythm. <break time='700ms'/> Bring awareness to the top of your head. <break time='500ms'/> Notice any sensations there. <break time='700ms'/> Gently scan down through your face, <break time='300ms'/> your jaw, <break time='300ms'/> your neck, <break time='300ms'/> your shoulders. <break time='800ms'/> If you find tension, acknowledge it kindly. <break time='500ms'/> And on the next exhale, invite it to soften. <break time='900ms'/> Continue scanning down the arms, <break time='300ms'/> the chest, <break time='300ms'/> the belly, <break time='300ms'/> the hips, <break time='300ms'/> the legs, <break time='400ms'/> all the way to the feet.</speak>",
+         type: "ssml",
+         caption:
+           "Now allow your breathing to return to a natural rhythm. Bring awareness to the top of your head. Notice any sensations there. Gently scan down through your face, your jaw, your neck, your shoulders. If you find tension, acknowledge it kindly. And on the next exhale, invite it to soften. Continue scanning down the arms, the chest, the belly, the hips, the legs, all the way to the feet.",
+         pauseSeconds: 18,
+       },
+       {
+         text:
+           "<speak>Now bring attention to the space of the mind. <break time='700ms'/> Thoughts may arise. <break time='500ms'/> That is natural. <break time='700ms'/> Rather than pushing them away, imagine watching them like clouds drifting across the sky. <break time='900ms'/> Notice them. <break time='400ms'/> Label them gently as thinking. <break time='700ms'/> And return to the breath. <break time='900ms'/> Each time you return, <break time='400ms'/> you are strengthening awareness.</speak>",
+         type: "ssml",
+         caption:
+           "Now bring attention to the space of the mind. Thoughts may arise. That is natural. Rather than pushing them away, imagine watching them like clouds drifting across the sky. Notice them. Label them gently as thinking. And return to the breath. Each time you return, you are strengthening awareness.",
+         pauseSeconds: 18,
+       },
+       {
+         text:
+           "<speak>Begin to deepen the breath slightly. <break time='700ms'/> Feel the surface beneath you. <break time='600ms'/> Notice the room around you. <break time='700ms'/> Bring small movement back into your fingers and toes. <break time='800ms'/> When you're ready, gently open your eyes. <break time='900ms'/> Carry this steadiness with you. <break time='600ms'/> You can return to this breath at any time.</speak>",
+         type: "ssml",
+         caption:
+           "Begin to deepen the breath slightly. Feel the surface beneath you. Notice the room around you. Bring small movement back into your fingers and toes. When you're ready, gently open your eyes. Carry this steadiness with you. You can return to this breath at any time.",
+       },
+     ];
+
+     for (let i = 0; i < segments.length; i += 1) {
+       if (runId !== meditationRunId) {
+         return;
+       }
+
+       const segment = segments[i];
+       await playSpeech(segment);
+
+       if (runId !== meditationRunId) {
+         return;
+       }
+
+       if (typeof segment.pauseSeconds === "number" && segment.pauseSeconds > 0) {
+         const pauseMs = Math.round(segment.pauseSeconds * 1000);
+         const pauseSeconds = Math.round(segment.pauseSeconds * 10) / 10;
+         meditationUi.caption.textContent = `Silence for ${pauseSeconds} seconds...`;
+         const completedPause = await waitWithRunGuard(pauseMs, runId);
+         if (!completedPause) {
+           return;
+         }
+       }
+     }
+
+     if (runId === meditationRunId) {
+       meditationUi.caption.textContent =
+         "Meditation complete. Press Start Meditation to begin again.";
+     }
+   }
+
+   function cancelMeditationRun() {
+     meditationRunId += 1;
    }
 
    function createMeditationUi() {
@@ -104,33 +234,34 @@ import './style.css';
      const startButton = document.createElement("button");
      startButton.textContent = "Start Meditation";
      startButton.addEventListener("click", async () => {
-       const text =
-         "Take a slow breath in, hold for a moment, and release. Let your shoulders soften and rest your attention gently on the present moment.";
-       await playSpeech(text, "/audio/meditation_intro.mp3");
+       await runGuidedMeditation();
      });
 
      const q1 = document.createElement("button");
      q1.textContent = "My mind is wandering";
      q1.addEventListener("click", async () => {
+       cancelMeditationRun();
        const text =
          "Noticing wandering is already awareness. Label the thought softly and return to your breath.";
-       await playSpeech(text, "/audio/q_mind_wandering.mp3");
+       await playSpeech({ text, fallbackUrl: "/audio/q_mind_wandering.mp3" });
      });
 
      const q2 = document.createElement("button");
      q2.textContent = "I feel anxious";
      q2.addEventListener("click", async () => {
+       cancelMeditationRun();
        const text =
          "Place one hand on your chest and lengthen your exhale. You are safe in this moment.";
-       await playSpeech(text, "/audio/q_anxious.mp3");
+       await playSpeech({ text, fallbackUrl: "/audio/q_anxious.mp3" });
      });
 
      const q3 = document.createElement("button");
      q3.textContent = "I cant focus";
      q3.addEventListener("click", async () => {
+       cancelMeditationRun();
        const text =
          "Shrink your focus to one anchor: just the sensation of breathing at your nose for the next three breaths.";
-       await playSpeech(text, "/audio/q_cant_focus.mp3");
+       await playSpeech({ text, fallbackUrl: "/audio/q_cant_focus.mp3" });
      });
 
      controls.append(startButton, q1, q2, q3);
