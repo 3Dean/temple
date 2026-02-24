@@ -57,11 +57,33 @@ canvas {
   font-size: 20px;
   pointer-events: none;
   user-select: none;
+  opacity: 1;
+  visibility: visible;
+  transition:
+    opacity 180ms ease,
+    visibility 0ms linear 0ms;
+}
+
+#crosshair.is-hidden {
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 180ms ease,
+    visibility 0ms linear 180ms;
 }
 #audio-controls {
   position: absolute;
   top: 20px;
   right: 20px;
+  z-index: 25;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 10px;
+}
+
+#controls-help,
+#music-panel {
   color: white;
   text-shadow: 1px 1px 2px black;
   background-color: rgba(0, 0, 0, 0.5);
@@ -71,6 +93,25 @@ canvas {
   flex-direction: column;
   align-items: center;
   gap: 8px;
+}
+
+#controls-help {
+  align-items: flex-start;
+  min-width: 150px;
+}
+
+#controls-help-title {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+#controls-help-lines {
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+#controls-help-lines div {
+  white-space: nowrap;
 }
 #audio-controls button {
   background-color: rgba(255, 255, 255, 0.2);
@@ -90,11 +131,22 @@ canvas {
   margin: 5px 0;
 }
 
+@media (max-width: 700px) {
+  #audio-controls {
+    flex-direction: column;
+    align-items: flex-end;
+  }
+
+  #controls-help {
+    display: none;
+  }
+}
+
 #meditation-ui {
   position: fixed;
   left: 50%;
   bottom: 20px;
-  transform: translateX(-50%);
+  transform: translateX(-50%) translateY(8px);
   width: min(92vw, 760px);
   background: rgba(0, 0, 0, 0.62);
   border: 1px solid rgba(255, 255, 255, 0.2);
@@ -103,6 +155,24 @@ canvas {
   padding: 12px;
   z-index: 20;
   backdrop-filter: blur(2px);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 220ms ease,
+    transform 220ms ease,
+    visibility 0ms linear 220ms;
+}
+
+#meditation-ui.is-near-avatar {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition:
+    opacity 220ms ease,
+    transform 220ms ease,
+    visibility 0ms linear 0ms;
 }
 
 #meditation-caption {

@@ -3,17 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>First Person NavMesh Navigation with HDR Environment</title>
+    <title>Avatar Demo</title>
   </head>
   <body>
-    <div id="info">Avatar Demo</div>
+    <div id="info">Meditation Session 1</div>
     <div id="loading">
       <div id="loading-status">Loading...</div>
       <div id="loading-controls">
         WASD - Move<br />
         Mouse - Look<br />
-        Space - Jump<br />
-        Shift - Run<br />
         Click - Teleport
       </div>
     </div>
@@ -21,9 +19,19 @@
 
     <!-- Audio Controls UI -->
     <div id="audio-controls">
-      <button id="play-pause">Play Music</button>
-      <input type="range" id="volume-slider" min="0" max="100" value="70" />
-      <div id="volume-label">Volume</div>
+      <div id="controls-help">
+        <div id="controls-help-title">Controls</div>
+        <div id="controls-help-lines">
+          <div>Move: WASD</div>
+          <div>Look: Mouse</div>
+          <div>Teleport: Click</div>
+        </div>
+      </div>
+      <div id="music-panel">
+        <button id="play-pause">Play Music</button>
+        <input type="range" id="volume-slider" min="0" max="100" value="70" />
+        <div id="volume-label">Volume</div>
+      </div>
     </div>
     <!-- Vite handles this now -->
     <script type="module" src="/src/main.js"></script>

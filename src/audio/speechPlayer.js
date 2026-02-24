@@ -215,3 +215,8 @@ export function getMouthAmount() {
 export function isPlaying() {
   return Boolean(mediaElement && !mediaElement.paused && !mediaElement.ended);
 }
+
+export function stopPlayback() {
+  cleanupCurrentElement();
+  smoothedMouth = 0;
+}

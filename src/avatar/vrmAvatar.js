@@ -311,3 +311,9 @@ export function setMouthOpen(amount0to1) {
     }
   });
 }
+
+export function getAvatarWorldPosition(target = new THREE.Vector3()) {
+  if (!currentAvatarRoot) return null;
+  currentAvatarRoot.getWorldPosition(target);
+  return target;
+}

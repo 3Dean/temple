@@ -7,6 +7,7 @@ import {
   updateVrm,
   setSpeaking,
   setMouthOpen,
+  getAvatarWorldPosition,
 } from './avatar/vrmAvatar.js';
 import {
   initAudio as initSpeechAudio,
@@ -14,6 +15,7 @@ import {
   playTtsText,
   getMouthAmount,
   isPlaying as isSpeechPlaying,
+  stopPlayback as stopSpeechPlayback,
 } from './audio/speechPlayer.js';
 import './style.css';
 
@@ -51,12 +53,13 @@ import './style.css';
      strength: 0.1, // How much the flowers move
      speed: 1.5, // How fast the wind blows
      chaos: 0.2, // Randomness in the wind
-     maxAngle: 0.15, // Maximum angle in radians
+     maxAngle: 0.05, // Maximum angle in radians
    };
 
    // Audio control elements
    const playPauseButton = document.getElementById("play-pause");
    const volumeSlider = document.getElementById("volume-slider");
+   const crosshairElement = document.getElementById("crosshair");
    const loadingElement = document.getElementById("loading");
    const loadingStatusElement = document.getElementById("loading-status");
 
@@ -68,6 +71,11 @@ import './style.css';
 
    const meditationUi = createMeditationUi();
    let meditationRunId = 0;
+   let meditationUiVisible = false;
+   const avatarShowDistanceMeters = 1.5;
+   const avatarHideDistanceMeters = 1.55;
+   const avatarWorldPosition = new THREE.Vector3();
+   const playerWorldPosition = new THREE.Vector3();
 
    async function ensureSpeechAudioInitialized() {
      if (!speechAudioInitialized) {
@@ -155,7 +163,7 @@ import './style.css';
        },
        {
          text:
-           "<speak>Now we'll gently shape the breath. <break time='700ms'/> Inhale slowly for a count of four. <break time='300ms'/> One <break time='1000ms'/> two <break time='1000ms'/> three <break time='1000ms'/> four. <break time='1000ms'/> Hold the breath softly for two. <break time='1000ms'/> One <break time='1000ms'/> two. <break time='1000ms'/> Exhale slowly for six. <break time='300ms'/> One <break time='1000ms'/> two <break time='1000ms'/> three <break time='1000ms'/> four <break time='1000ms'/> five <break time='1000ms'/> six. <break time='1200ms'/> Again. <break time='500ms'/> Inhale four. <break time='900ms'/> Hold two. <break time='700ms'/> Exhale six. <break time='1200ms'/> Let the exhale be smooth and unforced. <break time='600ms'/> With each breath, allow tension to drain downward.</speak>",
+           "<speak>Now we'll gently shape the breath. <break time='700ms'/> Inhale slowly for a count of four. <break time='300ms'/> One <break time='1000ms'/> two <break time='1000ms'/> three <break time='1000ms'/> four. <break time='1000ms'/> Hold the breath softly for two. <break time='1000ms'/> One <break time='1000ms'/> two. <break time='1000ms'/> Exhale slowly for six. <break time='300ms'/> One <break time='1000ms'/> two <break time='1000ms'/> three <break time='1000ms'/> four <break time='1000ms'/> five <break time='1000ms'/> six. <break time='400ms'/> Again. <break time='500ms'/> Inhale four. <break time='900ms'/> Hold two. <break time='700ms'/> Exhale six. <break time='1200ms'/> Let the exhale be smooth and unforced. <break time='600ms'/> With each breath, allow tension to drain downward.</speak>",
          type: "ssml",
          caption:
            "Now we'll gently shape the breath. Inhale slowly for a count of four. One two three four. Hold the breath softly for two. One two. Exhale slowly for six. One two three four five six. Again. Inhale four, hold two, exhale six. Let the exhale be smooth and unforced. With each breath, allow tension to drain downward.",
@@ -219,6 +227,49 @@ import './style.css';
      meditationRunId += 1;
    }
 
+   function setMeditationUiVisible(nextVisible) {
+     if (meditationUiVisible === nextVisible) return;
+     meditationUiVisible = nextVisible;
+     meditationUi.root.classList.toggle("is-near-avatar", nextVisible);
+     crosshairElement?.classList.toggle("is-hidden", nextVisible);
+
+     if (!nextVisible) {
+       cancelMeditationRun();
+       stopSpeechPlayback();
+       setSpeaking(false);
+       setMouthOpen(0);
+       meditationUi.caption.textContent = "Move closer to the guide to interact.";
+     } else if (
+       meditationUi.caption.textContent === "Move closer to the guide to interact."
+     ) {
+       meditationUi.caption.textContent =
+         "Press the ESC key on your keyboard to show cursor. Click or tap Start Meditation to begin a guided reflection.";
+     }
+   }
+
+   function updateMeditationUiProximity() {
+     if (!player) {
+       setMeditationUiVisible(false);
+       return;
+     }
+
+     const avatarPosition = getAvatarWorldPosition(avatarWorldPosition);
+     if (!avatarPosition) {
+       setMeditationUiVisible(false);
+       return;
+     }
+
+     player.getWorldPosition(playerWorldPosition);
+     const dx = playerWorldPosition.x - avatarPosition.x;
+     const dz = playerWorldPosition.z - avatarPosition.z;
+     const horizontalDistance = Math.hypot(dx, dz);
+
+     const threshold = meditationUiVisible
+       ? avatarHideDistanceMeters
+       : avatarShowDistanceMeters;
+     setMeditationUiVisible(horizontalDistance <= threshold);
+   }
+
    function createMeditationUi() {
      const root = document.createElement("div");
      root.id = "meditation-ui";
@@ -226,7 +277,7 @@ import './style.css';
      const caption = document.createElement("div");
      caption.id = "meditation-caption";
      caption.textContent =
-       "Press Start Meditation to begin a guided reflection.";
+       "Press the ESC key on your keyboard to show cursor. Click or tap Start Meditation to begin a guided reflection.";
 
      const controls = document.createElement("div");
      controls.className = "meditation-buttons";
@@ -1199,6 +1250,7 @@ import './style.css';
      animateFlowers(time);
 
      updateVrm(delta);
+     updateMeditationUiProximity();
 
      const speaking = isSpeechPlaying();
      setSpeaking(speaking);
