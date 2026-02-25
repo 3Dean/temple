@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { VRMLoaderPlugin } from '@pixiv/three-vrm';
 
+// GLB-first avatar pipeline. If a loaded GLB contains VRM metadata, we use it.
 let currentVrm = null;
 let currentAvatarRoot = null;
 let currentMixer = null;
@@ -11,10 +13,14 @@ let speechTime = 0;
 let mouthFallbackTargets = [];
 let blinkFallbackTargets = [];
 let hasEmbeddedAnimationClips = false;
+let idleAction = null;
+let talkAction = null;
+let activeAction = null;
 const SPEECH_MORPH_STRENGTH = 0.35;
 const SPEECH_MORPH_MAX = 0.45;
 const BLINK_CLOSED_DURATION = 0.09;
 const BLINK_OPEN_DURATION = 0.12;
+const ACTION_FADE_SECONDS = 0.22;
 
 let blinkTimer = 0;
 let nextBlinkDelay = 0;
@@ -36,6 +42,44 @@ const _handTarget = new THREE.Quaternion();
 const _deltaQuat = new THREE.Quaternion();
 const _deltaEuler = new THREE.Euler();
 const _avatarWorldPosition = new THREE.Vector3();
+
+function _findClipByNames(clips, candidates) {
+  if (!Array.isArray(clips) || clips.length === 0) return null;
+  for (const candidate of candidates) {
+    const match = THREE.AnimationClip.findByName(clips, candidate);
+    if (match) return match;
+  }
+  return null;
+}
+
+function _prepareLoopAction(action) {
+  if (!action) return;
+  action.setLoop(THREE.LoopRepeat, Infinity);
+  action.clampWhenFinished = false;
+  action.enabled = true;
+}
+
+function _switchActiveAction(nextAction) {
+  if (!nextAction || activeAction === nextAction) return;
+
+  _prepareLoopAction(nextAction);
+  nextAction.reset();
+  nextAction.fadeIn(ACTION_FADE_SECONDS).play();
+
+  if (activeAction) {
+    activeAction.fadeOut(ACTION_FADE_SECONDS);
+  }
+  activeAction = nextAction;
+}
+
+function _syncSpeechAnimationState() {
+  if (!currentMixer) return;
+
+  const next = isSpeaking ? (talkAction || idleAction) : (idleAction || talkAction);
+  if (next) {
+    _switchActiveAction(next);
+  }
+}
 
 function _captureRightArmBones() {
   if (!currentVrm?.humanoid) return;
@@ -204,8 +248,11 @@ function _applyProceduralRightArmGesture(delta) {
   }
 }
 
-export async function loadVrmAvatar({ scene, url, position, animationClipName }) {
+export async function loadAvatarGlb({ scene, url, position, animationClipName }) {
   const loader = new GLTFLoader();
+  const dracoLoader = new DRACOLoader();
+  dracoLoader.setDecoderPath('/draco/');
+  loader.setDRACOLoader(dracoLoader);
   loader.register((parser) => new VRMLoaderPlugin(parser));
   const originalWarn = console.warn;
   console.warn = (...args) => {
@@ -232,6 +279,9 @@ export async function loadVrmAvatar({ scene, url, position, animationClipName })
   currentVrm = vrm || null;
   currentAvatarRoot = avatarRoot;
   currentMixer = null;
+  idleAction = null;
+  talkAction = null;
+  activeAction = null;
   avatarRoot.position.copy(position || new THREE.Vector3());
 
   // Conservative defaults. Adjust here if your specific avatar imports with different orientation.
@@ -252,24 +302,37 @@ export async function loadVrmAvatar({ scene, url, position, animationClipName })
 
   if (Array.isArray(gltf.animations) && gltf.animations.length > 0) {
     currentMixer = new THREE.AnimationMixer(avatarRoot);
-    const chosenClip =
-      (animationClipName &&
-        THREE.AnimationClip.findByName(gltf.animations, animationClipName)) ||
+
+    const idleClip =
+      _findClipByNames(gltf.animations, [animationClipName || '', 'clip_idle', 'idle']) ||
       gltf.animations[0];
-    const action = currentMixer.clipAction(chosenClip);
-    action.reset();
-    action.play();
-    if (animationClipName && chosenClip.name !== animationClipName) {
+    const talkClip = _findClipByNames(gltf.animations, ['clip_talk', 'talk']);
+
+    idleAction = currentMixer.clipAction(idleClip);
+    _prepareLoopAction(idleAction);
+
+    if (talkClip) {
+      talkAction = currentMixer.clipAction(talkClip);
+      _prepareLoopAction(talkAction);
+    }
+
+    if (animationClipName && idleClip.name !== animationClipName) {
       console.warn(
-        `Requested animation clip "${animationClipName}" not found in ${url}. Using "${chosenClip.name}" instead.`
+        `Requested animation clip "${animationClipName}" not found in ${url}. Using "${idleClip.name}" instead.`
       );
     }
+
+    if (!talkClip) {
+      console.warn(`No talk animation clip found in ${url}. Falling back to idle while speaking.`);
+    }
+
+    _syncSpeechAnimationState();
   }
 
   return vrm || gltf;
 }
 
-export function updateVrm(delta) {
+export function updateAvatar(delta) {
   if (!currentAvatarRoot) return;
 
   if (!hasEmbeddedAnimationClips) {
@@ -284,8 +347,15 @@ export function updateVrm(delta) {
   _updateBlink(delta);
 }
 
+// Backward-compatible aliases for older imports.
+export const loadVrmAvatar = loadAvatarGlb;
+export const updateVrm = updateAvatar;
+
 export function setSpeaking(nextSpeaking) {
-  isSpeaking = Boolean(nextSpeaking);
+  const normalized = Boolean(nextSpeaking);
+  if (isSpeaking === normalized) return;
+  isSpeaking = normalized;
+  _syncSpeechAnimationState();
 }
 
 export function setMouthOpen(amount0to1) {

@@ -1,10 +1,11 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
 import { ColorManagement, SRGBColorSpace, ACESFilmicToneMapping } from 'three';
 import {
-  loadVrmAvatar,
-  updateVrm,
+  loadAvatarGlb,
+  updateAvatar,
   updateAvatarFacing,
   setSpeaking,
   setMouthOpen,
@@ -637,6 +638,9 @@ import './style.css';
    function loadModels() {
      // Create a GLTFLoader that uses our loading manager
      const loader = new GLTFLoader(loadingManager);
+     const dracoLoader = new DRACOLoader();
+     dracoLoader.setDecoderPath('/draco/');
+     loader.setDRACOLoader(dracoLoader);
 
      // Define all the models to load
      const modelsList = [
@@ -686,8 +690,8 @@ import './style.css';
 
      // Load each model
      modelsList.forEach((modelInfo) => {
-       loader.load(
-         modelInfo.url,
+      loader.load(
+        modelInfo.url,
          function (gltf) {
            const model = gltf.scene;
 
@@ -846,8 +850,8 @@ import './style.css';
              createBackupNavmesh();
            }
          }
-       );
-     });
+      );
+    });
 
   }
 
@@ -1435,7 +1439,7 @@ import './style.css';
      // Animate flowers if we have any
      animateFlowers(time, delta);
 
-     updateVrm(delta);
+     updateAvatar(delta);
      updateMeditationUiProximity();
      if (player) {
        player.getWorldPosition(playerWorldPosition);
@@ -1463,13 +1467,13 @@ import './style.css';
      setupScene();
      setupPlayer();
      loadModels(); // Load all models at once
-      loadVrmAvatar({
+      loadAvatarGlb({
         scene,
-        url: "/models/yogawoman_idle.glb",
+        url: "/models/yogawoman_anim.glb",
         position: new THREE.Vector3(0, 0, 6.342),
         animationClipName: "clip_idle",
       }).catch((error) => {
-        console.warn("Failed to load avatar /models/yogawoman_idle.glb", error);
+        console.warn("Failed to load avatar /models/yogawoman_anim.glb", error);
       });
 
      // Fix any shadow issues after a short delay to ensure all models are loaded
