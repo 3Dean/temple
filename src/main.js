@@ -34,7 +34,7 @@ import './style.css';
     let audioIsPlaying = false;
     const SOMAFM_DRONEZONE_STREAM_URL = "https://ice5.somafm.com/dronezone-128-mp3";
 
-   const playerHeight = 1.7; // Height of player camera (eye level) - INCREASED FROM 1.7
+   const playerHeight = 1.6; // Height of player camera (eye level) - INCREASED FROM 1.7
    const playerRadius = 0.5;
    const moveSpeed = 0.05;
    let velocity = new THREE.Vector3();
@@ -820,7 +820,7 @@ import './style.css';
 
            // Special case for navmesh: place player on it
             if (modelInfo.name === "navmesh" && player) {
-              placePlayerOnNavmesh(new THREE.Vector3(0, 0, 7.5));
+              placePlayerOnNavmesh(new THREE.Vector3(0, 0, 7.3));
             }
          },
          function (xhr) {
