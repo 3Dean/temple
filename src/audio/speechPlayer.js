@@ -1,3 +1,5 @@
+import amplifyOutputs from '../../amplify_outputs.json';
+
 let audioContext = null;
 let analyser = null;
 let masterGain = null;
@@ -6,6 +8,15 @@ let mediaSource = null;
 let timeDomain = null;
 let smoothedMouth = 0;
 let activeObjectUrl = null;
+const configuredTtsApiBase =
+  (typeof import.meta.env.VITE_TTS_API_BASE === 'string' &&
+    import.meta.env.VITE_TTS_API_BASE.trim()) ||
+  (typeof amplifyOutputs?.custom?.ttsApiBaseUrl === 'string' &&
+    amplifyOutputs.custom.ttsApiBaseUrl.trim()) ||
+  '';
+const ttsEndpoint = configuredTtsApiBase
+  ? `${configuredTtsApiBase.replace(/\/+$/, '')}/api/tts`
+  : '/api/tts';
 
 export async function initAudio() {
   if (!audioContext) {
@@ -129,7 +140,7 @@ export async function playTtsText(text, options = {}) {
   }
 
   try {
-    const response = await fetch('/api/tts', {
+    const response = await fetch(ttsEndpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -182,7 +193,7 @@ export async function playTtsText(text, options = {}) {
 
     return playBlob(blob);
   } catch (error) {
-    console.warn('Failed calling /api/tts', error);
+    console.warn(`Failed calling ${ttsEndpoint}`, error);
     return false;
   }
 }
