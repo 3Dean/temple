@@ -5,6 +5,7 @@ import { VRMLoaderPlugin } from '@pixiv/three-vrm';
 let currentVrm = null;
 let currentAvatarRoot = null;
 let currentMixer = null;
+let defaultAvatarYaw = 0;
 let isSpeaking = false;
 let speechTime = 0;
 let mouthFallbackTargets = [];
@@ -34,6 +35,7 @@ const _lowerTarget = new THREE.Quaternion();
 const _handTarget = new THREE.Quaternion();
 const _deltaQuat = new THREE.Quaternion();
 const _deltaEuler = new THREE.Euler();
+const _avatarWorldPosition = new THREE.Vector3();
 
 function _captureRightArmBones() {
   if (!currentVrm?.humanoid) return;
@@ -234,6 +236,7 @@ export async function loadVrmAvatar({ scene, url, position, animationClipName })
 
   // Conservative defaults. Adjust here if your specific avatar imports with different orientation.
   avatarRoot.rotation.set(0, 0, 0);
+  defaultAvatarYaw = avatarRoot.rotation.y;
   avatarRoot.scale.setScalar(1.1);
 
   scene.add(avatarRoot);
@@ -316,4 +319,45 @@ export function getAvatarWorldPosition(target = new THREE.Vector3()) {
   if (!currentAvatarRoot) return null;
   currentAvatarRoot.getWorldPosition(target);
   return target;
+}
+
+function _shortestAngleDelta(from, to) {
+  return Math.atan2(Math.sin(to - from), Math.cos(to - from));
+}
+
+export function updateAvatarFacing({
+  targetWorldPosition = null,
+  delta = 0,
+  enabled = false,
+  turnSpeed = 3.2,
+  deadZone = 0.01,
+  maxOffsetFromDefault = Math.PI * 0.85,
+} = {}) {
+  if (!currentAvatarRoot) return;
+
+  let desiredYaw = defaultAvatarYaw;
+  if (enabled && targetWorldPosition) {
+    currentAvatarRoot.getWorldPosition(_avatarWorldPosition);
+    const dx = targetWorldPosition.x - _avatarWorldPosition.x;
+    const dz = targetWorldPosition.z - _avatarWorldPosition.z;
+    const planarLengthSq = dx * dx + dz * dz;
+    if (planarLengthSq > 0.000001) {
+      const unclampedYaw = Math.atan2(dx, dz);
+      const offsetFromDefault = _shortestAngleDelta(defaultAvatarYaw, unclampedYaw);
+      const clampedOffset = THREE.MathUtils.clamp(
+        offsetFromDefault,
+        -maxOffsetFromDefault,
+        maxOffsetFromDefault
+      );
+      desiredYaw = defaultAvatarYaw + clampedOffset;
+    }
+  }
+
+  const currentYaw = currentAvatarRoot.rotation.y;
+  const deltaYaw = _shortestAngleDelta(currentYaw, desiredYaw);
+  if (Math.abs(deltaYaw) < deadZone) return;
+
+  const maxStep = Math.max(0, turnSpeed * Math.max(0, delta));
+  const step = THREE.MathUtils.clamp(deltaYaw, -maxStep, maxStep);
+  currentAvatarRoot.rotation.y = currentYaw + step;
 }

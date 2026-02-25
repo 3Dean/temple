@@ -5,6 +5,7 @@ import { ColorManagement, SRGBColorSpace, ACESFilmicToneMapping } from 'three';
 import {
   loadVrmAvatar,
   updateVrm,
+  updateAvatarFacing,
   setSpeaking,
   setMouthOpen,
   getAvatarWorldPosition,
@@ -50,10 +51,16 @@ import './style.css';
    // For flower animation
    const flowerParts = [];
    const windSettings = {
-     strength: 0.1, // How much the flowers move
-     speed: 1.5, // How fast the wind blows
-     chaos: 0.2, // Randomness in the wind
-     maxAngle: 0.05, // Maximum angle in radians
+     strength: 0.06, // Base sway amplitude in radians
+     speed: 1.15, // Baseline wind speed
+     chaos: 0.03, // Small high-frequency turbulence
+     maxAngle: 0.11, // Maximum tilt angle in radians
+     gustStrength: 0.55, // How much gusts amplify the base wind
+     gustSpeed: 0.22, // Slow macro gust cycle
+     microGustStrength: 0.2, // Secondary gust variation
+     microGustSpeed: 0.63, // Mid-frequency gust cycle
+     inertia: 7.5, // Higher values react faster to target angles
+     positionSway: 0.014, // Horizontal sway amount in world units
    };
 
    // Audio control elements
@@ -424,7 +431,7 @@ import './style.css';
      renderer.setSize(window.innerWidth, window.innerHeight);
      renderer.shadowMap.enabled = true;
      renderer.toneMapping = ACESFilmicToneMapping;
-     renderer.toneMappingExposure = 0.4; // Increased exposure for better brightness
+     renderer.toneMappingExposure = 1.5; // Increased exposure for better brightness
      renderer.outputColorSpace = SRGBColorSpace;
      ColorManagement.enabled = true;
      document.body.appendChild(renderer.domElement);
@@ -433,11 +440,11 @@ import './style.css';
      loadEnvironmentMap();
 
      // Add lights - adjusted for better balance with environment lighting
-     const ambientLight = new THREE.AmbientLight(0x92A0B5, 0.4); // Increased ambient intensity
+     const ambientLight = new THREE.AmbientLight(0x5b6bbe, 0.4); // Increased ambient intensity
      scene.add(ambientLight);
 
      // Directional light with improved shadow settings
-     const directionalLight = new THREE.DirectionalLight(0xfff8e3, 0.6);
+     const directionalLight = new THREE.DirectionalLight(0xffdf80, 0.7);
      directionalLight.position.set(15, 10, 7.5);
 
      // Shadow settings
@@ -476,13 +483,23 @@ import './style.css';
    }
 
    // Load environment map from HDR file
-   function loadEnvironmentMap() {
-     // Create a basic sky color as a fallback
-     scene.background = new THREE.Color(0x87ceeb);
+  function loadEnvironmentMap() {
+    const hdrYawDegrees = -85;
+    const hdrYawRadians = THREE.MathUtils.degToRad(hdrYawDegrees);
+
+    // Create a basic sky color as a fallback
+    scene.background = new THREE.Color("#12a3f8");
 
      // Load the HDR file
      const rgbeLoader = new RGBELoader();
-     const hdrUrl = "/images/kloppenheim_06_puresky_2k.hdr";
+     const isMobileDevice =
+       (navigator.userAgentData && navigator.userAgentData.mobile) ||
+       /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+         navigator.userAgent
+       );
+     const hdrUrl = isMobileDevice
+       ? "/images/sunrise2k.hdr"
+       : "/images/sunrise4k.hdr";
      console.log("Loading HDR from:", hdrUrl);
 
      rgbeLoader.load(
@@ -501,12 +518,14 @@ import './style.css';
          const envMap =
            pmremGenerator.fromEquirectangular(texture).texture;
 
-         // Apply to scene
-         scene.environment = envMap;
-         scene.background = envMap;
+        // Apply to scene
+        scene.environment = envMap;
+        scene.background = envMap;
+        scene.environmentRotation.set(0, hdrYawRadians, 0);
+        scene.backgroundRotation.set(0, hdrYawRadians, 0);
 
-         // Clean up resources
-         pmremGenerator.dispose();
+        // Clean up resources
+        pmremGenerator.dispose();
          texture.dispose();
 
          console.log("Environment map processed and applied");
@@ -628,7 +647,12 @@ import './style.css';
 
                  // Add some randomness to make the animation more natural
                  node.userData.windOffset = Math.random() * Math.PI * 2;
-                 node.userData.windFactor = 0.8 + Math.random() * 0.4; // Between 0.8 and 1.2
+                 node.userData.windFactor = 0.75 + Math.random() * 0.5; // Between 0.75 and 1.25
+                 node.userData.windSpeedFactor = 0.82 + Math.random() * 0.42; // Slight speed variation
+                 node.userData.windResponse = 0.7 + Math.random() * 0.9; // Inertial responsiveness
+                 node.userData.swayFactor = 0.75 + Math.random() * 0.55; // Position sway variation
+                 node.userData.currentWindX = 0;
+                 node.userData.currentWindZ = 0;
 
                  // Add to flowerParts array for animation
                  flowerParts.push(node);
@@ -849,7 +873,7 @@ import './style.css';
 
      player = new THREE.Mesh(geometry, material);
      player.position.y = 0; // Position at ground level
-     player.castShadow = true;
+     player.castShadow = false;
      scene.add(player);
 
      // Add camera to player (at eye level)
@@ -1182,9 +1206,16 @@ import './style.css';
    }
 
    // Animate flowers to simulate wind blowing through them
-   function animateFlowers(time) {
+  function animateFlowers(time, delta) {
      // Skip if no flower parts to animate
      if (!flowerParts.length) return;
+
+     const windTime = time * 0.001;
+     const gust =
+       1 +
+       Math.sin(windTime * windSettings.gustSpeed) * windSettings.gustStrength +
+       Math.sin(windTime * windSettings.microGustSpeed + 1.3) *
+         windSettings.microGustStrength;
 
      // Animate each flower part
      flowerParts.forEach((flowerPart) => {
@@ -1192,48 +1223,65 @@ import './style.css';
        if (!flowerPart.userData.originalRotation) return;
 
        // Calculate wind effect
-       const windTime = time * windSettings.speed * 0.001;
        const windOffset = flowerPart.userData.windOffset || 0;
        const windFactor = flowerPart.userData.windFactor || 1;
+       const windSpeedFactor = flowerPart.userData.windSpeedFactor || 1;
+       const windResponse = flowerPart.userData.windResponse || 1;
+       const swayFactor = flowerPart.userData.swayFactor || 1;
+       const localTime =
+         windTime * windSettings.speed * windSpeedFactor + windOffset;
 
-       // Create a sine wave motion for natural swaying
-       const windAmount =
-         Math.sin(windTime + windOffset) *
+       // Blend broad sway + secondary motion so the waveform is less periodic.
+       const primary =
+         Math.sin(localTime) * windSettings.strength * windFactor * gust;
+       const secondary =
+         Math.sin(localTime * 1.73 + windOffset * 0.5) *
          windSettings.strength *
-         windFactor;
+         0.48 *
+         windFactor *
+         gust;
 
        // Add some chaos for more natural movement
        const chaosX =
-         Math.sin(windTime * 1.3 + windOffset * 2) *
+         Math.sin(localTime * 2.31 + windOffset * 1.7) *
          windSettings.chaos *
          windFactor;
        const chaosZ =
-         Math.cos(windTime * 0.7 + windOffset * 3) *
+         Math.cos(localTime * 1.91 + windOffset * 2.1) *
          windSettings.chaos *
          windFactor;
 
-       // Apply rotation (clamped to maximum angle)
-       const xAngle = Math.max(
+       // Compute target rotation (clamped to max tilt).
+       const targetX = Math.max(
          -windSettings.maxAngle,
-         Math.min(windSettings.maxAngle, windAmount + chaosX)
+         Math.min(windSettings.maxAngle, primary + secondary + chaosX)
        );
-       const zAngle = Math.max(
+       const targetZ = Math.max(
          -windSettings.maxAngle,
-         Math.min(windSettings.maxAngle, windAmount * 0.5 + chaosZ)
+         Math.min(windSettings.maxAngle, primary * 0.45 + secondary * 0.7 + chaosZ)
        );
+
+       // Add inertia so each flower eases toward targets instead of snapping.
+       const blend = 1 - Math.exp(-windSettings.inertia * windResponse * delta);
+       flowerPart.userData.currentWindX +=
+         (targetX - flowerPart.userData.currentWindX) * blend;
+       flowerPart.userData.currentWindZ +=
+         (targetZ - flowerPart.userData.currentWindZ) * blend;
 
        // Apply to model - add wind rotation to original rotation
        flowerPart.rotation.x =
-         flowerPart.userData.originalRotation.x + xAngle;
+         flowerPart.userData.originalRotation.x + flowerPart.userData.currentWindX;
        flowerPart.rotation.z =
-         flowerPart.userData.originalRotation.z + zAngle;
+         flowerPart.userData.originalRotation.z + flowerPart.userData.currentWindZ;
 
        // Optional: slight position sway for added realism
        if (flowerPart.userData.originalPosition) {
          flowerPart.position.x =
-           flowerPart.userData.originalPosition.x + chaosX * 0.02;
+           flowerPart.userData.originalPosition.x +
+           flowerPart.userData.currentWindX * windSettings.positionSway * swayFactor;
          flowerPart.position.z =
-           flowerPart.userData.originalPosition.z + chaosZ * 0.02;
+           flowerPart.userData.originalPosition.z +
+           flowerPart.userData.currentWindZ * windSettings.positionSway * swayFactor;
        }
      });
    }
@@ -1247,10 +1295,18 @@ import './style.css';
      updatePlayerMovement();
 
      // Animate flowers if we have any
-     animateFlowers(time);
+     animateFlowers(time, delta);
 
      updateVrm(delta);
      updateMeditationUiProximity();
+     if (player) {
+       player.getWorldPosition(playerWorldPosition);
+       updateAvatarFacing({
+         targetWorldPosition: meditationUiVisible ? playerWorldPosition : null,
+         enabled: meditationUiVisible,
+         delta,
+       });
+     }
 
      const speaking = isSpeechPlaying();
      setSpeaking(speaking);
