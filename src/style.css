@@ -19,9 +19,24 @@ canvas {
   width: 100%;
   text-align: center;
   color: white;
+  z-index: 10;
   pointer-events: none;
   text-shadow: 1px 1px 2px black;
 }
+#scene-reveal-overlay {
+  position: fixed;
+  inset: 0;
+  background: #000;
+  opacity: 1;
+  z-index: 1000;
+  pointer-events: none;
+  transition: opacity 1000ms ease;
+}
+
+#scene-reveal-overlay.is-hidden {
+  opacity: 0;
+}
+
 #loading {
   position: absolute;
   top: 50%;
@@ -35,6 +50,7 @@ canvas {
   padding: 12px 14px;
   border-radius: 8px;
   color: white;
+  z-index: 1100;
   text-shadow: 1px 1px 2px black;
 }
 #loading-status {

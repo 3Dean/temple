@@ -36,12 +36,12 @@ import './style.css';
 
    const playerHeight = 1.7; // Height of player camera (eye level) - INCREASED FROM 1.7
    const playerRadius = 0.5;
-   const moveSpeed = 0.1;
+   const moveSpeed = 0.05;
    let velocity = new THREE.Vector3();
    let verticalVelocity = 0;
-   const gravity = 0.01;
+   const gravity = 0.005;
    let isOnGround = false;
-   const jumpForce = 0.15;
+   const jumpForce = 0.1;
    const clock = new THREE.Clock();
    let speechAudioInitialized = false;
 
@@ -69,6 +69,60 @@ import './style.css';
    const crosshairElement = document.getElementById("crosshair");
    const loadingElement = document.getElementById("loading");
    const loadingStatusElement = document.getElementById("loading-status");
+   const sceneRevealOverlayElement = document.getElementById("scene-reveal-overlay");
+
+   const sceneReadyState = {
+     modelsReady: false,
+     hdrReady: false,
+     revealed: false,
+   };
+
+   function showMusicAvailableHint() {
+     if (!audioIsPlaying) {
+       playPauseButton.style.backgroundColor = "rgba(80, 200, 120, 0.3)";
+       setTimeout(() => {
+         playPauseButton.style.backgroundColor = "rgba(255, 255, 255, 0.2)";
+       }, 2000);
+     }
+   }
+
+   function markSceneModelsReady() {
+     sceneReadyState.modelsReady = true;
+     revealSceneIfReady();
+   }
+
+   function markSceneHdrReady() {
+     sceneReadyState.hdrReady = true;
+     revealSceneIfReady();
+   }
+
+   function revealSceneIfReady() {
+     if (
+       sceneReadyState.revealed ||
+       !sceneReadyState.modelsReady ||
+       !sceneReadyState.hdrReady
+     ) {
+       return;
+     }
+
+     sceneReadyState.revealed = true;
+
+     if (loadingElement) {
+       loadingElement.style.display = "none";
+     }
+
+     if (!sceneRevealOverlayElement) {
+       return;
+     }
+
+     sceneRevealOverlayElement.classList.add("is-hidden");
+     const cleanupOverlay = function () {
+       sceneRevealOverlayElement.style.display = "none";
+       sceneRevealOverlayElement.removeEventListener("transitionend", cleanupOverlay);
+     };
+     sceneRevealOverlayElement.addEventListener("transitionend", cleanupOverlay);
+     setTimeout(cleanupOverlay, 1300);
+   }
 
    // Add event listeners for audio controls
    playPauseButton.addEventListener("click", toggleAudio);
@@ -380,7 +434,8 @@ import './style.css';
      // OnLoad - Called when all models are loaded
      function () {
        console.log("All models loaded successfully");
-       loadingElement.style.display = "none";
+       showMusicAvailableHint();
+       markSceneModelsReady();
      },
      // OnProgress - Called as loading progresses
      function (url, itemsLoaded, itemsTotal) {
@@ -500,12 +555,22 @@ import './style.css';
      const hdrUrl = isMobileDevice
        ? "/images/sunrise2k.hdr"
        : "/images/sunrise4k.hdr";
+     const hdrLoadStart = performance.now();
+     let hdrBytesLoaded = 0;
+     let hdrBytesTotal = 0;
      console.log("Loading HDR from:", hdrUrl);
 
      rgbeLoader.load(
        hdrUrl,
        function (texture) {
+         const hdrLoadEnd = performance.now();
+         const hdrLoadSeconds = (hdrLoadEnd - hdrLoadStart) / 1000;
+         const bytesToReport = hdrBytesTotal > 0 ? hdrBytesTotal : hdrBytesLoaded;
+         const sizeMb = bytesToReport / (1024 * 1024);
          console.log("HDR loaded successfully");
+         console.log(
+           `HDR metrics: url=${hdrUrl}, time=${hdrLoadSeconds.toFixed(2)}s, size=${sizeMb.toFixed(2)}MB`
+         );
 
          // Setup proper texture mapping
          texture.mapping = THREE.EquirectangularReflectionMapping;
@@ -524,19 +589,34 @@ import './style.css';
         scene.environmentRotation.set(0, hdrYawRadians, 0);
         scene.backgroundRotation.set(0, hdrYawRadians, 0);
 
-        // Clean up resources
+       // Clean up resources
         pmremGenerator.dispose();
          texture.dispose();
 
          console.log("Environment map processed and applied");
+         markSceneHdrReady();
        },
         function (xhr) {
+          hdrBytesLoaded = xhr.loaded || 0;
+          hdrBytesTotal = xhr.total || 0;
+          const progressPct =
+            hdrBytesTotal > 0
+              ? ((hdrBytesLoaded / hdrBytesTotal) * 100).toFixed(1)
+              : "unknown";
+          const loadedMb = hdrBytesLoaded / (1024 * 1024);
+          const totalMb = hdrBytesTotal / (1024 * 1024);
           console.log(
-            "HDR loading: " + (xhr.loaded / xhr.total) * 100 + "%"
+            `HDR loading: ${progressPct}% (${loadedMb.toFixed(2)}MB / ${hdrBytesTotal > 0 ? `${totalMb.toFixed(2)}MB` : "unknown"})`
           );
         },
        function (error) {
+         const hdrLoadEnd = performance.now();
+         const hdrLoadSeconds = (hdrLoadEnd - hdrLoadStart) / 1000;
          console.error("Error loading environment map:", error);
+         console.error(
+           `HDR metrics (failed): url=${hdrUrl}, time=${hdrLoadSeconds.toFixed(2)}s, loaded=${(hdrBytesLoaded / (1024 * 1024)).toFixed(2)}MB`
+         );
+         markSceneHdrReady();
        }
      );
    }
@@ -764,21 +844,7 @@ import './style.css';
        );
      });
 
-     // Clean up roughness mipmapper after all models are loaded
-     loadingManager.onLoad = function () {
-       loadingElement.style.display = "none";
-
-       // Suggest playing music once everything is loaded
-        if (!audioIsPlaying) {
-         // Show a hint that music is available
-         playPauseButton.style.backgroundColor = "rgba(80, 200, 120, 0.3)";
-         setTimeout(() => {
-           playPauseButton.style.backgroundColor =
-             "rgba(255, 255, 255, 0.2)";
-         }, 2000);
-       }
-     };
-   }
+  }
 
    // Create a simple backup temple if model fails to load
    function createBackupTemple() {
@@ -1324,7 +1390,6 @@ import './style.css';
    function start() {
      setupScene();
      setupPlayer();
-     loadEnvironmentMap();
      loadModels(); // Load all models at once
       loadVrmAvatar({
         scene,
