@@ -9,9 +9,11 @@ body {
   overflow: hidden; 
   background-color: #000; 
   font-family: Arial, sans-serif;
+  touch-action: none;
 }
 canvas { 
   display: block; 
+  touch-action: none;
 }
 #info {
   position: absolute;

@@ -460,10 +460,15 @@ import './style.css';
      shift: false,
    };
 
-   // Mouse controls
+   // Mouse/touch look controls
    let mouseEnabled = false;
-   let mouseX = 0,
-     mouseY = 0;
+   const touchLookEnabled =
+     window.matchMedia("(pointer: coarse)").matches ||
+     "ontouchstart" in window ||
+     navigator.maxTouchPoints > 0;
+   let activeTouchId = null;
+   let lastTouchX = 0;
+   let lastTouchY = 0;
    let playerDirection = new THREE.Vector3(0, 0, -1);
    let euler = new THREE.Euler(0, 0, 0, "YXZ"); // YXZ order - yaw, pitch, then roll
 
@@ -963,6 +968,14 @@ import './style.css';
 
      document.addEventListener("pointerlockchange", onPointerLockChange);
      document.addEventListener("mousemove", onMouseMove);
+     renderer.domElement.addEventListener("touchstart", onTouchStart, {
+       passive: false,
+     });
+     renderer.domElement.addEventListener("touchmove", onTouchMove, {
+       passive: false,
+     });
+     renderer.domElement.addEventListener("touchend", onTouchEnd);
+     renderer.domElement.addEventListener("touchcancel", onTouchEnd);
 
      // Add teleport click functionality
      setupTeleport();
@@ -1037,9 +1050,13 @@ import './style.css';
      const movementX = event.movementX || 0;
      const movementY = event.movementY || 0;
 
+     applyLookDelta(movementX, movementY, 0.002);
+   }
+
+   function applyLookDelta(deltaX, deltaY, sensitivity) {
      // Update euler angles
-     euler.y -= movementX * 0.002; // Yaw (left/right)
-     euler.x -= movementY * 0.002; // Pitch (up/down)
+     euler.y -= deltaX * sensitivity; // Yaw (left/right)
+     euler.x -= deltaY * sensitivity; // Pitch (up/down)
 
      // Clamp vertical look
      euler.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, euler.x));
@@ -1049,6 +1066,61 @@ import './style.css';
 
      // Update player direction for movement
      playerDirection.set(0, 0, -1).applyQuaternion(camera.quaternion);
+   }
+
+   function isInteractiveTouchTarget(target) {
+     if (!target || !(target instanceof Element)) {
+       return false;
+     }
+     return Boolean(
+       target.closest(
+         "#audio-controls, #meditation-ui, button, input, select, textarea, a, label"
+       )
+     );
+   }
+
+   function getTouchById(touches, identifier) {
+     for (let i = 0; i < touches.length; i += 1) {
+       if (touches[i].identifier === identifier) {
+         return touches[i];
+       }
+     }
+     return null;
+   }
+
+   function onTouchStart(event) {
+     if (!touchLookEnabled || activeTouchId !== null) return;
+     if (event.touches.length !== 1) return;
+
+     const touch = event.changedTouches[0];
+     if (isInteractiveTouchTarget(touch.target)) return;
+
+     activeTouchId = touch.identifier;
+     lastTouchX = touch.clientX;
+     lastTouchY = touch.clientY;
+     event.preventDefault();
+   }
+
+   function onTouchMove(event) {
+     if (!touchLookEnabled || activeTouchId === null) return;
+
+     const touch = getTouchById(event.touches, activeTouchId);
+     if (!touch) return;
+
+     const deltaX = touch.clientX - lastTouchX;
+     const deltaY = touch.clientY - lastTouchY;
+     lastTouchX = touch.clientX;
+     lastTouchY = touch.clientY;
+
+     applyLookDelta(deltaX, deltaY, 0.0032);
+     event.preventDefault();
+   }
+
+   function onTouchEnd(event) {
+     if (activeTouchId === null) return;
+     const touch = getTouchById(event.changedTouches, activeTouchId);
+     if (!touch) return;
+     activeTouchId = null;
    }
 
    // Toggle navmesh visibility with T key
