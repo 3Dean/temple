@@ -27,7 +27,7 @@ export async function initAudio() {
     timeDomain = new Uint8Array(analyser.fftSize);
 
     masterGain = audioContext.createGain();
-    masterGain.gain.value = 1;
+    masterGain.gain.value = 1.5;
 
     analyser.connect(masterGain);
     masterGain.connect(audioContext.destination);
