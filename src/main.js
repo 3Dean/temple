@@ -829,7 +829,7 @@ import './style.css';
 
            // Special case for navmesh: place player on it
             if (modelInfo.name === "navmesh" && player) {
-              placePlayerOnNavmesh(new THREE.Vector3(0, 0, 7.3));
+              placePlayerOnNavmesh(new THREE.Vector3(0, 0, 7.1));
             }
          },
          function (xhr) {
